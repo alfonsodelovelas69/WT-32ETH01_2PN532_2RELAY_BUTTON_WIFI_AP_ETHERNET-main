@@ -342,6 +342,10 @@ python -m platformio device monitor
 ```bash
 python -m platformio device list
 ```
+Для WIN10 WIN11 
+
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -t upload
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -t uploadfs
 
 Для першого переходу на нову таблицю розділів прошийте firmware через USB/serial, потім окремо завантажте web-assets командою `uploadfs`. Прошивка не форматує старий SPIFFS і лише намагається скопіювати його дані до LittleFS `cardfs`; перевірте повідомлення про результат у Serial Monitor. Не використовуйте стару OTA-схему: OTA slot тепер зайнятий файловою системою.
    
