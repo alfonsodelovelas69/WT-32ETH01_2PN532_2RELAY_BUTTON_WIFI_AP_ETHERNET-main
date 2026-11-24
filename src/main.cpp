@@ -1410,6 +1410,8 @@ void beginWiFiConnection(const String &ssid, const String &pass,
                          unsigned long now) {
   WiFi.mode(apActive ? WIFI_AP_STA : WIFI_STA);
   WiFi.setSleep(false);
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.disconnect(false);
   WiFi.begin(ssid.c_str(), pass.c_str());
   wifiConnectAttempts++;
@@ -2584,9 +2586,14 @@ void startWiFiAP(const char* apSSID = "WT32-Config", const char* apPass = "confi
 void stopWiFiAP(bool keepStation) {
   if (captiveDnsActive) dnsServer.stop();
   captiveDnsActive = false;
-  if (apActive) WiFi.softAPdisconnect(false);
+  if (apActive && !WiFi.softAPdisconnect(true)) {
+    Serial.println("Не вдалося вимкнути WiFi AP.");
+  }
   apActive = false;
   WiFi.mode(keepStation ? WIFI_STA : WIFI_OFF);
+  if (keepStation) {
+    Serial.println("WiFi AP і captive DNS вимкнено; залишено режим WiFi STA.");
+  }
 }
 
 void handleNotFound() {

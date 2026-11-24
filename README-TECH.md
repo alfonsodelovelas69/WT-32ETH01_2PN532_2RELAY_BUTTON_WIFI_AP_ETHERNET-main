@@ -84,9 +84,9 @@ GPIO39 є лише входом і **не має внутрішньої підт
 
 ### Мережа та автономний режим
 
-Після запуску вебсервер і цикл зчитування карток стартують без очікування на PN532. Прошивка перевіряє Ethernet у фоновому режимі. Якщо протягом 8 секунд Ethernet не отримав IP, прошивка пробує підключити WiFi, якщо його SSID задано в EEPROM через `/wifi` або через `WIFI_DEFAULT_SSID` у коді. На кожну спробу WiFi відводиться до 20 секунд; виконується до трьох спроб. Старі значення SSID/пароля в EEPROM без маркера явного налаштування ігноруються. Якщо WiFi не налаштований або після трьох спроб не підключився, запускається точка доступу; після невдалого циклу пристрій очікує хвилину й пробує знову.
+Після запуску вебсервер і цикл зчитування карток стартують без очікування на PN532. Прошивка перевіряє Ethernet у фоновому режимі. Якщо протягом 8 секунд Ethernet не отримав IP, прошивка пробує підключити WiFi, якщо його SSID задано в EEPROM через `/wifi` або через `WIFI_DEFAULT_SSID` у коді. Для однакових SSID на роутері й репітері прошивка сканує всі канали та обирає точку з найкращим сигналом. На кожну спробу WiFi відводиться до 20 секунд; виконується до трьох спроб. Старі значення SSID/пароля в EEPROM без маркера явного налаштування ігноруються. Якщо WiFi не налаштований або після трьох спроб не підключився, запускається точка доступу; після невдалого циклу пристрій очікує хвилину й пробує знову. `WT32-Config` залишається доступною під час повторної спроби та вимикається лише після отримання IP від WiFi.
 
-Якщо під час роботи зникає Ethernet, прошивка використовує вже підключений WiFi STA, якщо він доступний; інакше запускає локальну AP. Якщо зникає WiFi STA, запускається AP. Коли Ethernet знову доступний, він знову стає основним каналом. Втрата мережі не зупиняє зчитування карток і таймери реле.
+WT32-ETH01 підтримує WiFi 2,4 ГГц. Репітер має працювати в режимі моста з DHCP від основного роутера; налаштування бездротової мережі (SSID, пароль і тип захисту) мають збігатися. Якщо під час роботи зникає Ethernet, прошивка використовує вже підключений WiFi STA, якщо він доступний; інакше запускає локальну AP. Якщо зникає WiFi STA, запускається AP. Коли Ethernet знову доступний, він знову стає основним каналом. Втрата мережі не зупиняє зчитування карток і таймери реле.
 
 Підключення до роутера через Ethernet або WiFi потрібне для доступу до сторінки з інших пристроїв у тій самій локальній мережі. Інтернет для RFID-контролю не потрібен.
 
@@ -206,6 +206,191 @@ MQTT вимкнений, доки не задано адресу брокера.
 `parts`, `items` і, якщо передано, `requestId`; кожен елемент включає поля
 картки та `present`. Знімки списків не retained — надсилайте нову команду
 `list`, щоб отримати актуальні дані.
+
+#### Використання в MQTT Studio
+
+Створіть з’єднання з IP-адресою брокера, портом `1883` і тими самими логіном та
+паролем, що вказані в `/mqtt`. Підпишіться на `wt32/controller/#`, щоб бачити
+всі теми пристрою, або лише на потрібні теми: `status`, `event/#`, `data/#` і
+`result`. Якщо базовий topic змінено в налаштуваннях WT32, замініть
+`wt32/controller` у прикладах на своє значення.
+
+Для запитів додайте публікацію в тему команди та JSON payload. Використовуйте
+QoS 0 або 1 і вимкніть **Retain** для всіх команд — retained-команда може
+виконатися повторно після перепідключення WT32.
+
+| Тема для публікації | Payload | Результат |
+| --- | --- | --- |
+| `wt32/controller/cmd/relay` | `{"action":"pulse","mask":1,"duration":1000}` | Імпульс реле 1 на 1 секунду |
+| `wt32/controller/cmd/relay` | `{"action":"on","mask":2}` | Увімкнути реле 2 без таймера |
+| `wt32/controller/cmd/relay` | `{"action":"off","mask":2}` | Вимкнути реле 2 |
+| `wt32/controller/cmd/card/latest` | `{"requestId":"latest-01"}` | Відповідь у `data/card/latest` |
+| `wt32/controller/cmd/presence` | `{"action":"list","requestId":"snapshot-01"}` | Списки карток у `data/cards`, `data/present`, `data/absent` |
+| `wt32/controller/cmd/presence` | `{"action":"arrive","uid":"04 3A 5F 9D"}` | Позначити зареєстровану картку присутньою |
+| `wt32/controller/cmd/presence` | `{"action":"depart","vehicle":"AA1234BB"}` | Позначити картку за номером авто відсутньою |
+| `wt32/controller/cmd/card/add` | `{"uid":"04 3A 5F 9D","relay":1}` | Додати UID для реле 1 |
+| `wt32/controller/cmd/card/remove` | `{"uid":"04 3A 5F 9D"}` | Видалити всі записи цього UID |
+
+У `mask` значення `1` означає реле 1, `2` — реле 2, `3` — обидва. Для
+`pulse` тривалість задається в мілісекундах (50–60000); якщо `duration`
+відсутній, використовується налаштована тривалість імпульсу. Команди `on`
+залишають реле активним до `off`/`stop` або перезапуску пристрою.
+
+Перед запитом підпишіться на теми відповіді: MQTT Studio не зберігає відповіді,
+які надійшли до підписки. Поточний стан публікується в retained-темі
+`wt32/controller/status`, наприклад:
+
+```json
+{"online":true,"network":"WiFi","ip":"192.168.1.80","pn532":true,"pn532_1":true,"pn532_2":false,"relay1":false,"relay2":false}
+```
+
+Статус оновлюється приблизно кожні 30 секунд і після зміни мережі, PN532 або
+реле. Події `event/card` та `event/presence` надсилаються під час відповідних
+подій і не retained. Приклад відповіді на запит останнього зчитування:
+
+```json
+{"found":true,"uid":"04 3A 5F 9D","requestId":"latest-01","authorized":true,"relay":1,"vehicle":"AA1234BB"}
+```
+
+Для списків приходить кілька повідомлень на кожну тему `data/...`. Поля
+`part` і `parts` — нумерація частин від 1; кожна частина містить до чотирьох
+елементів у `items`. Збирайте всі частини з однаковими `list` і `requestId`.
+Кожна картка містить `uid`, `lastName`, `firstName`, `middleName`, `vehicle`,
+`birthDate`, `relay` і `present`. Порожній список також повертається однією
+частиною з порожнім `items`.
+
+Підтвердження в `wt32/controller/result` має формат
+`{"command":"relay","ok":true}`. `ok: true` для реле означає, що команду
+прийнято в чергу, а не що імпульс уже завершився. Для фактичного стану реле
+використовуйте `status`. `requestId` повертається у відповіді останнього
+зчитування та списків; у `result` його немає. Для прибуття/вибуття
+підтвердження надходить у `result`, а зміна стану — окремою подією
+`event/presence`.
+
+#### Python-клієнт для мнемосхеми
+
+Встановіть бібліотеку MQTT для Python:
+
+```bash
+python -m pip install "paho-mqtt>=2,<3"
+```
+
+Нижче — основа клієнта для GUI на Tkinter, PySide або іншому Python-фреймворку.
+Обробник MQTT кладе повідомлення в чергу; GUI має читати цю чергу у своєму
+головному потоці й оновлювати індикатори/таблиці там. Наприклад, у Tkinter це
+можна робити періодично через `root.after(...)`. Кнопки мнемосхеми викликають
+`relay_pulse`, `relay_set`, `request_latest`, `request_lists` або
+`set_presence`.
+
+```python
+import json
+import os
+import queue
+import uuid
+
+import paho.mqtt.client as mqtt
+
+BROKER = os.getenv("MQTT_HOST", "192.168.1.50")
+PORT = int(os.getenv("MQTT_PORT", "1883"))
+BASE = os.getenv("MQTT_BASE", "wt32/controller").strip("/")
+messages = queue.Queue()
+
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code.is_failure:
+        print("MQTT connection failed:", reason_code)
+        return
+    for suffix in ("status", "event/#", "data/#", "result"):
+        client.subscribe(f"{BASE}/{suffix}", qos=0)
+
+
+def on_message(client, userdata, message):
+    try:
+        payload = json.loads(message.payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        print("Invalid JSON from", message.topic, error)
+        return
+    messages.put((message.topic, payload))
+
+
+client = mqtt.Client(
+    mqtt.CallbackAPIVersion.VERSION2,
+    client_id="wt32-mnemonic",
+)
+user = os.getenv("MQTT_USER")
+password = os.getenv("MQTT_PASSWORD")
+if user:
+    client.username_pw_set(user, password or "")
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect(BROKER, PORT, keepalive=60)
+client.loop_start()
+
+
+def publish(suffix, payload):
+    info = client.publish(
+        f"{BASE}/{suffix}",
+        json.dumps(payload, ensure_ascii=False),
+        qos=0,
+        retain=False,
+    )
+    if info.rc != mqtt.MQTT_ERR_SUCCESS:
+        raise RuntimeError(f"MQTT publish failed: {info.rc}")
+
+
+def relay_pulse(mask, duration=1000):
+    publish("cmd/relay", {
+        "action": "pulse",
+        "mask": mask,
+        "duration": duration,
+    })
+
+
+def relay_set(mask, enabled):
+    publish("cmd/relay", {
+        "action": "on" if enabled else "off",
+        "mask": mask,
+    })
+
+
+def request_latest():
+    request_id = uuid.uuid4().hex[:12]
+    publish("cmd/card/latest", {"requestId": request_id})
+    return request_id
+
+
+def request_lists():
+    request_id = uuid.uuid4().hex[:12]
+    publish("cmd/presence", {
+        "action": "list",
+        "requestId": request_id,
+    })
+    return request_id
+
+
+def set_presence(action, uid=None, vehicle=None):
+    payload = {"action": action}
+    if uid:
+        payload["uid"] = uid
+    elif vehicle:
+        payload["vehicle"] = vehicle
+    else:
+        raise ValueError("Provide uid or vehicle")
+    publish("cmd/presence", payload)
+
+
+# У GUI: кнопці імпульсу реле 1 призначте relay_pulse(1).
+# Для оновлення списків викличте request_lists(), а потім
+# обробіть повідомлення з черги messages у потоці інтерфейсу.
+# Наприклад, payload з теми BASE + "/status" оновлює індикатори,
+# а BASE + "/data/cards" / "present" / "absent" — таблиці списків.
+```
+
+У змінних середовища `MQTT_HOST`, `MQTT_PORT`, `MQTT_BASE`, `MQTT_USER` і
+`MQTT_PASSWORD` задайте ті самі параметри, що й у WT32. Не вбудовуйте пароль
+брокера в скрипт, який передаватиметься іншим користувачам. Для доступу
+мнемосхеми обмежте права MQTT-користувача потрібними темами та не відкривайте
+порт брокера безпосередньо в інтернет.
 
 #### Приклад брокера Mosquitto на Raspberry Pi
 
